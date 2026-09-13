@@ -1,0 +1,72 @@
+---
+title: "document2md"
+subtitle: "PDFs and scanned pages to Markdown"
+toc: false
+number-sections: false
+---
+
+::: {.home-lead}
+**document2md** converts a PDF, or an ordered set of scanned page images,
+into Markdown — any document, such as an edition of Mexico's official
+gazette (DOF, *Diario Oficial de la Federación*) — optionally cropped down
+to a single note.
+:::
+
+It is a wrapper around [mineru](https://github.com/opendatalab/MinerU) for
+OCR and layout analysis on scanned pages, plus a light backend built on
+[pymupdf4llm](https://github.com/pymupdf/RAG) that reads a born-digital
+PDF's own embedded text layer instead, needing no OCR at all. On top of
+either backend, document2md keeps mineru's own server warm across a batch
+of documents, stitches several scanned pages of the same note into one
+continuous Markdown document, rewrites the raw HTML tables mineru falls
+back to into Markdown tables, and crops the result down to a single note by
+title. It has no notion of a "note" or a legal provision of its own, and it
+downloads nothing — getting the PDF or the page images onto disk is the
+caller's problem.
+
+::: {.fronts}
+::: {.front}
+### Any PDF or scan
+
+Born-digital PDFs convert through their own text layer; scanned PDFs and
+page images convert through mineru's OCR.
+:::
+::: {.front}
+### One warm server
+
+Batch conversion keeps mineru's own server loaded once across many
+documents, instead of paying its startup cost per document.
+:::
+::: {.front}
+### Cropped to one section
+
+`--titulo`/`--titulo-siguiente` cut the result down to a single note by
+locating its title and the next note's title in the converted text.
+:::
+:::
+
+## Quickstart
+
+```bash
+pip install document2md                 # born-digital PDFs, no OCR
+pip install "document2md[mineru]"       # + OCR for scanned pages
+```
+
+```bash
+document2md --pdf edicion.pdf --outdir output
+```
+
+See [Install](pages/install.qmd) for what each command gets you,
+[Command line](pages/cli.qmd) and [Python](pages/python.qmd) for the two
+ways to run a conversion, and [Backends](pages/backends.qmd) for how
+`auto` picks between mineru and pymupdf. Extending the package itself is
+documented separately, on the
+[developer docs](https://document2md.readthedocs.io/).
+
+## Colophon {.unnumbered}
+
+This site was built by the document2md maintainers together with Claude,
+Anthropic's coding assistant, through
+[Claude Code](https://claude.com/claude-code): the assistant helped set up
+the Quarto site and draft this page, with the authors reviewing and
+validating every change before it was committed.

@@ -1,0 +1,99 @@
+---
+title: "Python"
+---
+
+`BatchConverter` is document2md's Python entry point — the same code the
+`document2md` command runs, usable directly from a script. The code blocks
+on this page are illustrative and are not executed when the site is built;
+see [Command line](cli.qmd) for a version you can copy and run as-is, or
+the developer docs for a fully worked, tested example.
+
+## Converting a batch of documents
+
+```python
+from document2md import BatchConverter
+
+jobs = [
+    ("a.pdf", "output", "a.md"),
+    (["b-p1.jpg", "b-p2.jpg"], "output", "b.md"),
+]
+
+with BatchConverter() as convert:
+    for path_or_paths, outdir, filename in jobs:
+        convert(path_or_paths, outdir, filename)
+```
+
+`BatchConverter()` (default `backend="auto"`) is a context manager:
+entering it resolves the backend and, only for `mineru`, starts a
+persistent `mineru-api` server that every conversion in the `with` block
+shares — worth it once a batch has more than a document or two, since it
+avoids reloading mineru's models per document. Exiting stops that server.
+Each call to the entered converter takes a single PDF path, or a list of
+image paths for a document spanning several scanned pages, and writes the
+result to `outdir/filename`.
+
+## Choosing a backend
+
+```python
+with BatchConverter(backend="mineru") as convert:
+    ...
+```
+
+`backend` accepts `"auto"` (default), `"mineru"` or `"pymupdf"`; anything
+else raises `ValueError`. Once entered, the resolved name is available as
+`convert.backend`. See [Backends](backends.qmd) for the `auto` rule.
+
+## Every option of a single conversion
+
+```python
+with BatchConverter() as convert:
+    convert(
+        "edicion.pdf", "output", "nota.md",
+        titulo="ACUERDO por el que se...",
+        titulo_siguiente="DECRETO por el que se...",
+        min_confidence=0.8,
+        keep_pages=True,
+        keep_mineru_output=True,
+        timeout=1800,
+    )
+```
+
+- `titulo`/`titulo_siguiente` — crop the result down to the text between
+  the two titles, as they appear in the gazette's own index. Left out
+  (the default), the whole conversion is kept as-is.
+- `min_confidence` (default `0.6`) — how confident a fuzzy title match has
+  to be before it's trusted; a weaker one falls back to keeping more text.
+- `keep_pages` — also keep the uncropped Markdown, as
+  `<outdir>/<pdf stem>.full.md`.
+- `keep_mineru_output`, `timeout` — forwarded to the `mineru` backend;
+  accepted but ignored under `pymupdf`, which needs neither.
+
+## Sharing a server with a caller further up
+
+```python
+import os
+os.environ["MINERU_API_URL"]  # already set by a caller further up the stack
+with BatchConverter() as convert:
+    ...  # skips starting its own mineru-api server
+```
+
+If `MINERU_API_URL` is already set when `BatchConverter` is entered — set
+by a caller further up that is running its own batch — it reuses that
+server instead of starting a second one.
+
+## Used from LegalIA's nota2md
+
+`nota2md.legal_provisions` accepts an already-`__enter__`'d
+`BatchConverter` as its own `converter` parameter, so a batch of DOF legal
+provisions can share the same warm server too — the way to OCR many
+pre-HTML-era notes without paying mineru's startup cost once per note (see
+[`nota2md` in the LegalIA
+repository](https://github.com/INGEOTEC/LegalIA/tree/master/packages/nota2md)):
+
+```python
+import nota2md
+
+with BatchConverter() as convert:
+    for cod_nota in codigos_sin_html:
+        nota2md.legal_provisions(cod_nota, "output", source="image", converter=convert)
+```

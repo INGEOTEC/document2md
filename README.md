@@ -27,6 +27,11 @@ monorepo at commit `e1f258c`, where every commit of its earlier history (as
 `packages/document2md`, and as `packages/dof2md` before the rename) can still
 be read.
 
+## Documentation
+
+- **Using the package:** [ingeotec.github.io/document2md](https://ingeotec.github.io/document2md/)
+- **Extending the package:** [document2md.readthedocs.io](https://document2md.readthedocs.io/)
+
 ## Install
 
 ```bash

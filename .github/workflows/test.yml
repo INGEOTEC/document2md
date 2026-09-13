@@ -57,12 +57,14 @@ jobs:
       - name: Run tests
         run: pytest tests
 
-  # Runs the documentation's worked examples for real, separate from the
-  # pytest matrix above. Read the Docs' own build stays HTML-only. The OCR
-  # examples are marked `# doctest: +SKIP` (entering a BatchConverter starts a
-  # real mineru-api server) and are verified instead by tests/test_batch.py
-  # and tests/test_cli.py — the exception is written down on the page itself.
-  docs-doctest:
+  # Sphinx gate for the Read the Docs developer site: a strict HTML build
+  # (any broken cross-reference or other warning fails it) plus the
+  # documentation's few real, executed examples, separate from the pytest
+  # matrix above. Usage examples that would need mineru or pymupdf4llm live
+  # on the Pages site (website/) instead, not here, so there is little left
+  # to mark `# doctest: +SKIP` — the exception, where one remains, is written
+  # down on the page itself.
+  docs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,9 +76,12 @@ jobs:
       - name: Install docs and package dependencies
         run: |
           pip install -r docs/requirements.txt
-          # --no-deps: keeps the heavy mineru[pipeline] install out of this
-          # job, which is also why .readthedocs.yaml installs it this way.
+          # --no-deps: keeps the heavy mineru[pipeline] install (and
+          # pymupdf4llm) out of this job, which is also why
+          # .readthedocs.yaml installs it this way.
           pip install --no-deps -e .
+      - name: Build the docs strictly
+        run: python -m sphinx -n -W --keep-going -b html docs/source docs/build/html
       - name: Run the documentation's doctest examples
         run: python -m sphinx -b doctest docs/source docs/build/doctest
 

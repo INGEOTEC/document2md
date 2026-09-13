@@ -1,0 +1,53 @@
+---
+title: "Install"
+---
+
+document2md needs Python 3.10 or later.
+
+```bash
+pip install document2md
+```
+
+installs the light install: the `pymupdf` backend, built on
+[pymupdf4llm](https://github.com/pymupdf/RAG), which reads a born-digital
+PDF's own embedded text layer. No OCR, no models, small wheels. It cannot
+convert a scanned PDF or a set of scanned page images — see
+[Backends](backends.qmd) for what counts as "born-digital enough".
+
+```bash
+pip install "document2md[mineru]"
+```
+
+adds the `mineru` backend, for OCR and layout analysis on scanned pages.
+`mineru[pipeline]` is a heavy dependency: expect a large download, and a
+one-time model download the first time it actually runs. On Debian/Ubuntu,
+mineru's OpenCV dependency also needs two system packages:
+
+```bash
+sudo apt-get install libgl1 libglib2.0-0
+```
+
+**License note.** PyMuPDF and pymupdf4llm — the light `pymupdf` backend's
+dependency — are AGPL-3.0 licensed, unlike document2md itself
+(Apache-2.0). Check that fits your project before redistributing.
+
+## Which backend do I have?
+
+```bash
+document2md --help
+```
+
+always lists `--backend {auto,mineru,pymupdf}`, whether or not `mineru` is
+installed. To find out which one `auto` actually resolves to on your
+machine, run a conversion and read the first line it prints:
+
+```console
+$ document2md --pdf edicion.pdf
+Converting to Markdown (pymupdf)...
+```
+
+If you ask for a backend that isn't installed, or for `pymupdf` on input it
+can't handle, document2md exits with a message naming exactly what to
+install — never a traceback. See [Backends](backends.qmd) for the full
+`auto` rule, and [Command line](cli.qmd#what-the-error-messages-mean) for
+the exact wording of every such message.

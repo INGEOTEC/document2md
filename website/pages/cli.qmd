@@ -1,0 +1,90 @@
+---
+title: "Command line"
+---
+
+`document2md` takes exactly one input source — a local PDF or a set of
+local page images — and converts it to Markdown. It never downloads
+anything itself; get the file first, then convert it.
+
+## Input
+
+```bash
+document2md --pdf edicion.pdf
+```
+
+`--pdf` converts a single local PDF file.
+
+```bash
+document2md --images pagina-1.jpg pagina-2.jpg --filename out.md
+```
+
+`--images` converts an ordered list of scanned page image files — one note
+spanning several pages. `--filename` sets the output Markdown's name; with
+`--pdf` it defaults to the PDF's own name (`edicion.pdf` → `edicion.md`),
+but with `--images` it's required, since a set of images has no single
+name to derive one from. `--outdir` sets the output directory (default:
+`output/`).
+
+## Choosing a backend
+
+```bash
+document2md --pdf edicion.pdf --backend mineru
+```
+
+`--backend {auto,mineru,pymupdf}` (default `auto`) selects which backend
+converts the document. `auto` resolves to `mineru` when it's on `PATH`,
+otherwise `pymupdf`; see [Backends](backends.qmd) for the full rule and
+what each backend can and can't handle.
+
+## Cropping to one note
+
+```bash
+document2md --pdf edicion.pdf \
+    --titulo "ACUERDO por el que se..." \
+    --titulo-siguiente "DECRETO por el que se..."
+```
+
+Since one edition's PDF holds every note published that day,
+`--titulo`/`--titulo-siguiente` crop the resulting Markdown down to just
+one note — its own title, and the next note's title, as they appear in the
+gazette's own index. Title matching is fuzzy (OCR text rarely matches an
+index title exactly), so a match below `--min-confidence` (default `0.6`)
+is treated as not found and the crop falls back to keeping more text
+rather than dropping content.
+
+Other flags:
+
+- `--keep-pages` — also keep the uncropped Markdown, as
+  `<outdir>/<pdf stem>.full.md`.
+- `--keep-mineru-output` — keep mineru's own raw output (layout/model
+  JSON, rendered PDFs...) in `<outdir>/<pdf stem>_mineru/` instead of
+  discarding it; useful when a conversion looks wrong and mineru's own
+  read of the page is the first thing worth inspecting. Ignored under the
+  `pymupdf` backend, which produces no such output.
+
+## What the error messages mean
+
+document2md exits with a message and no traceback, rather than a stack
+trace, whenever it can't proceed:
+
+- **`Provide exactly one of: --pdf or --images.`** — neither, or both,
+  were given.
+- **`--filename is required with --images (there's no single input name to
+  derive one from).`**
+- **`Conversion timed out after 3600s. This document may be unusually
+  large.`** — the `mineru` backend didn't finish in time.
+- **`'mineru' is required for the mineru backend but isn't installed.
+  Install it with: pip install "document2md[mineru]"`** — `--backend
+  mineru` (or `auto` resolving to it) was requested without the `mineru`
+  extra installed.
+- **`Scanned page images always need OCR. Install the mineru backend with:
+  pip install "document2md[mineru]"`** — `--images` was combined with
+  `--backend pymupdf`.
+- **`<path> has no embedded text layer and needs OCR. Install the mineru
+  backend with: pip install "document2md[mineru]"`** — the `pymupdf`
+  backend was asked to convert a scanned (or mostly scanned) PDF; see
+  [Backends](backends.qmd) for exactly what "has no embedded text layer"
+  means.
+
+None of these fall back silently to another backend — document2md tells
+you what to install or what to change instead.

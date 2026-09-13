@@ -63,13 +63,22 @@ earlier history is still readable — as `packages/document2md`, and as
 pyproject.toml            document2md itself; the repository *is* the package
 setup.py                  two-line setuptools shim
 document2md/              the package: cli, batch, mineru_server, converter,
-                          tables, cutter
+                          pymupdf_backend, tables, cutter
 tests/                    its pytest suite
 dof2md/                   the old PyPI name's tombstone (see below)
 scripts/check_package_versions.py
-docs/                     Sphinx site, published at document2md.readthedocs.io
-.github/workflows/        test.yml, publish-pypi.yml
+website/                  Quarto user site, published to GitHub Pages at
+                          ingeotec.github.io/document2md — install, CLI,
+                          Python, backends; no API reference
+docs/                     Sphinx developer site, published at
+                          document2md.readthedocs.io — architecture, backends,
+                          development, full API reference; no usage guides
+                          beyond a pointer to the Pages site
+.github/workflows/        test.yml, website.yml, publish-pypi.yml
 ```
+
+The two sites have two audiences and no overlapping page: the Pages site is
+for using the package, Read the Docs for extending it.
 
 Two packages are published from this repository, so the release tag convention
 is `<pkg>-v<version>` (`document2md-v0.3.0`, `dof2md-v0.3.0`) rather than a
@@ -102,8 +111,9 @@ bare `v*`, which would not say which one.
 pytest tests            # document2md
 pytest dof2md/tests     # the tombstone
 python scripts/check_package_versions.py
+python -m sphinx -n -W --keep-going -b html docs/source docs/build/html
 python -m sphinx -b doctest docs/source docs/build/doctest
-python -m sphinx -b html docs/source docs/build/html
+quarto render website   # the Pages user site; needs Quarto 1.9.38, no Python
 ```
 
 **The two pytest runs are two invocations on purpose, never a bare `pytest`.**
@@ -130,12 +140,17 @@ extra actually installs; `document2md-light` installs `-e ".[test]"` with no
 apt step, proving the rest of the suite (including the `pymupdf` backend)
 needs no mineru at all.
 
-The docs' OCR examples are the one documented exception to "every public
-symbol has a verified example": entering a `BatchConverter` starts a real
-`mineru-api` server, or shells out to the real `pymupdf`/`pymupdf4llm`, so
-those are marked `# doctest: +SKIP` and verified instead by
-`tests/test_batch.py`, `tests/test_cli.py` and `tests/test_pymupdf_backend.py`.
-The exception is written on the docs page itself, not silently skipped.
+Usage examples that would need `mineru` or `pymupdf4llm` (entering a
+`BatchConverter`, running the CLI) live on the Pages site (`website/`) now,
+not on Read the Docs — that site's code blocks are illustrative and not
+executed at all, and say so once per page. Read the Docs itself currently
+has no `# doctest: +SKIP` example: `document2md.cutter`'s real,
+executed example on `architecture.rst` is the only one on the site, and it
+needs neither backend nor any file on disk. If a future page needs one
+(a new backend's own example, say), verify it for real instead in the
+matching test module (following `tests/test_batch.py`, `tests/test_cli.py`
+and `tests/test_pymupdf_backend.py`) and write the exception on the page
+itself, not silently.
 
 ## Publishing
 
@@ -147,6 +162,13 @@ set on this repository. `publish-pypi.yml` refuses a tag that disagrees with
 **`document2md` must reach PyPI before or at the same time as any `nota2md`
 release whose `ocr` extra requires it** (`document2md>=0.3.0`), or
 `pip install nota2md[ocr]` breaks for everyone outside the LegalIA repository.
+
+The Pages site publishes itself: `website.yml` renders `website/` on every
+pull request that touches it, and publishes to the `gh-pages` branch on every
+push to `main` that does — no human action once the workflow exists. Read
+the Docs is the opposite: the project must be imported once, by a human, at
+readthedocs.org; nothing in this repository can do that, and
+`document2md.readthedocs.io` answers 404 until it happens.
 
 ## Language policy
 

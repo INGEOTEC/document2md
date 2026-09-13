@@ -55,7 +55,6 @@ intersphinx_mapping = {
 # above, plus :py:func:/:py:mod: roles on those three names in index.rst, is
 # all it takes.
 
-templates_path = ["_templates"]
 source_suffix = ".rst"
 master_doc = "index"
 language = "en"
@@ -80,6 +79,7 @@ add_module_names = False
 # -- Options for HTML output ----------------------------------------------
 
 html_theme = "furo"
+html_title = "document2md"
 htmlhelp_basename = "document2mddoc"
 
 # -- Options for LaTeX/manual/texinfo output -------------------------------
