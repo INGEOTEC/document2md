@@ -1,0 +1,4 @@
+{
+  "base_branch": "main",
+  "test_command": "python -m pytest tests && python -m pytest dof2md/tests"
+}
