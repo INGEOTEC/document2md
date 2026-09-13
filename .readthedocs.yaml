@@ -1,0 +1,26 @@
+version: 2
+
+build:
+  os: "ubuntu-22.04"
+  tools:
+    python: "3.12"
+  apt_packages:
+    # `dot`, for sphinx.ext.graphviz's conversion-pipeline diagram on the
+    # index page (see docs/requirements.txt).
+    - graphviz
+  jobs:
+    post_install:
+      # --no-deps: document2md never imports mineru in-process (see
+      # docs/source/conf.py) — it only shells out to the mineru-api CLI —
+      # so pulling in the full mineru[pipeline] dependency (and its
+      # libgl1/opencv system dependency, see .github/workflows/test.yml)
+      # would only slow the docs build down for nothing. `requests`, the
+      # one dependency autodoc does need, is in docs/requirements.txt.
+      - pip install --no-deps -e .
+
+sphinx:
+  configuration: docs/source/conf.py
+
+python:
+  install:
+    - requirements: docs/requirements.txt
