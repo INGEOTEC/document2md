@@ -56,9 +56,10 @@ def parse_args(argv=None):
         "<outdir>/<pdf stem>_mineru/ instead of discarding it",
     )
     parser.add_argument(
-        "--backend", choices=("auto", "mineru"), default="auto",
-        help="Conversion backend to use (default: auto, which currently always "
-        "resolves to mineru)",
+        "--backend", choices=("auto", "mineru", "pymupdf"), default="auto",
+        help="Conversion backend to use (default: auto, which resolves to mineru "
+        "when it's on PATH, otherwise pymupdf, reading a PDF's own embedded text "
+        "layer without OCR)",
     )
     return parser.parse_args(argv)
 

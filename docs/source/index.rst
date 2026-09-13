@@ -21,15 +21,18 @@ packages it used to share a repository with are documented at
 :py:mod:`document2md` converts a PDF or a set of scanned page images — from
 Mexico's official gazette (DOF, *Diario Oficial de la Federación*) or any
 other document — into Markdown, optionally cropped down to a single note.
-It wraps `mineru <https://github.com/opendatalab/MinerU>`_ for the OCR and
-layout analysis itself; :py:mod:`document2md`'s own contribution is keeping
-mineru's ``mineru-api`` server warm across a batch of documents, stitching
-several scanned pages of the same note into one continuous Markdown
-document, rewriting mineru's raw HTML table fallback into Markdown tables,
-and cropping the result down to a single note by locating its title and the
-next note's title in the OCR'd text. It has no notion of a "note"/legal
-provision of its own, and no download of its own — getting a whole DOF
-edition's PDF by date and edition is `dofjson.download_edicion_pdf
+It has two backends: `mineru <https://github.com/opendatalab/MinerU>`_ (OCR
+and layout analysis, for scanned pages) and
+`pymupdf4llm <https://github.com/pymupdf/RAG>`_ (reading a born-digital
+PDF's own embedded text layer, no OCR needed); :py:mod:`document2md`'s own
+contribution is keeping mineru's ``mineru-api`` server warm across a batch
+of documents, stitching several scanned pages of the same note into one
+continuous Markdown document, rewriting mineru's raw HTML table fallback
+into Markdown tables, and cropping the result down to a single note by
+locating its title and the next note's title in the OCR'd text. It has no
+notion of a "note"/legal provision of its own, and no download of its own —
+getting a whole DOF edition's PDF by date and edition is
+`dofjson.download_edicion_pdf
 <https://github.com/INGEOTEC/LegalIA/tree/master/packages/dofjson>`_'s
 job; `nota2md <https://github.com/INGEOTEC/LegalIA/tree/master/packages/nota2md>`_
 is what calls into :py:mod:`document2md` at all, and only
@@ -37,17 +40,23 @@ as its OCR fallback for legal provisions predating the HTML era. Both live in
 the `LegalIA <https://github.com/INGEOTEC/LegalIA>`_ repository and are not
 dependencies of this one.
 
+PyMuPDF and pymupdf4llm are AGPL-3.0 licensed, unlike the rest of
+:py:mod:`document2md` (Apache-2.0); see the README's Install section.
+
 document2md's architecture
 ==========================
 
 Both entry points below — the ``document2md`` command line (:py:mod:`document2md.cli`)
 and :py:class:`~document2md.batch.BatchConverter` (:py:mod:`document2md.batch`) used directly
-from Python — go through the same pipeline. :py:class:`~document2md.mineru_server.MineruServer`
-keeps a single ``mineru-api`` process warm across a batch instead of paying
-its startup cost per document; :py:mod:`document2md.converter` shells out to it,
+from Python — go through the same pipeline. ``BatchConverter`` resolves which backend
+converts the document (``mineru`` or ``pymupdf``; see below), starting
+:py:class:`~document2md.mineru_server.MineruServer` to keep a single ``mineru-api``
+process warm across a batch only for the ``mineru`` backend.
+:py:mod:`document2md.converter` shells out to mineru and
+:py:mod:`document2md.pymupdf_backend` reads a PDF's own embedded text layer;
 :py:mod:`document2md.tables` rewrites mineru's raw HTML table fallback into
 Markdown tables, and :py:mod:`document2md.cutter` optionally crops the result down
-to one note by title.
+to one note by title, for either backend's output.
 
 .. graphviz::
    :alt: document2md's conversion pipeline, from entry points to Markdown output.
@@ -64,17 +73,20 @@ to one note by title.
        server [label="mineru_server.py\nMineruServer"];
        mineru [label="mineru CLI\n(external OCR/layout)", style="rounded,dashed", fillcolor="#ffffff"];
        converter [label="converter.py\nconvert_to_markdown()\nconvert_images_to_markdown()"];
+       pymupdf_backend [label="pymupdf_backend.py\nhas_text_layer()\nconvert_to_markdown()"];
        tables [label="tables.py\nhtml_tables_to_markdown()"];
        cutter [label="cutter.py\ncut_markdown_by_titles()\n(optional, if titulo given)"];
        output [label="Markdown output", shape=note, style=filled, fillcolor="#ffffff"];
 
        cli -> batch;
-       batch -> server [label="__enter__ / __exit__"];
+       batch -> server [label="__enter__ / __exit__ (mineru backend)"];
        server -> converter [label="MINERU_API_URL", style=dashed];
-       batch -> converter [label="__call__"];
+       batch -> converter [label="__call__ (mineru backend)"];
+       batch -> pymupdf_backend [label="__call__ (pymupdf backend)"];
        converter -> mineru [label="subprocess"];
        converter -> tables [label="rewrite HTML tables"];
        tables -> batch [label="Markdown"];
+       pymupdf_backend -> batch [label="Markdown"];
        batch -> cutter [label="titulo given"];
        cutter -> output;
        batch -> output [label="titulo omitted"];
@@ -89,17 +101,20 @@ though they are not part of its public API and can change without notice.
 **The one documented exception to "every public symbol has a verified
 example".** Entering :py:class:`~document2md.batch.BatchConverter`
 starts a real ``mineru-api`` server, and calling it shells out to the real
-``mineru`` CLI — neither is installed in the doctest job on purpose
-(``mineru[pipeline]`` is heavy, and keeping it out is exactly why
-``.readthedocs.yaml``/``test.yml`` install ``document2md`` with ``--no-deps``).
-Every example below that would actually invoke
-mineru is marked ``# doctest: +SKIP`` and is instead exercised for real by
-``tests/test_batch.py`` and ``tests/test_cli.py``, which mock only
-the mineru boundary (``document2md.converter.convert_to_markdown``/
-``convert_images_to_markdown``, ``document2md.batch.MineruServer``) and run
-everything else — argument forwarding, title cropping, ``keep_pages``,
-``keep_mineru_output`` — for real. ``document2md.cutter`` below, needing neither
-mineru nor any file on disk, is genuinely executed.
+``mineru`` CLI, or reads a PDF through the real ``pymupdf``/``pymupdf4llm`` —
+none of which are installed in the doctest job on purpose
+(``mineru[pipeline]`` and ``pymupdf4llm`` are both left out; keeping them out
+is exactly why ``.readthedocs.yaml``/``test.yml`` install ``document2md`` with
+``--no-deps``). Every example below that would actually invoke mineru or
+pymupdf4llm is marked ``# doctest: +SKIP`` and is instead exercised for real
+by ``tests/test_batch.py``, ``tests/test_cli.py`` and
+``tests/test_pymupdf_backend.py``, which mock only the mineru/pymupdf
+boundary (``document2md.converter.convert_to_markdown``/
+``convert_images_to_markdown``, ``document2md.batch.MineruServer``,
+``document2md.pymupdf_backend``) and run everything else — argument
+forwarding, backend resolution, title cropping, ``keep_pages``,
+``keep_mineru_output`` — for real. ``document2md.cutter`` below, needing
+neither backend nor any file on disk, is genuinely executed.
 
 ``document2md.cli`` — command-line entry point
 ----------------------------------------------
@@ -124,11 +139,15 @@ has no single input name to derive one from:
    Converting to Markdown (mineru)...
    Markdown saved to: output/nota-200.md
 
-``--backend {auto,mineru}`` (default ``auto``) selects the conversion
-backend; ``auto`` currently always resolves to ``mineru``, the only backend
-available. If the ``mineru`` extra isn't installed, ``document2md`` exits
-with a message pointing at ``pip install "document2md[mineru]"`` instead of
-a traceback.
+``--backend {auto,mineru,pymupdf}`` (default ``auto``) selects the
+conversion backend; ``auto`` resolves to ``mineru`` when the ``mineru`` CLI
+is on ``PATH``, otherwise to ``pymupdf``, which reads a PDF's own embedded
+text layer instead of running OCR — far faster, at the cost of slightly
+worse structure, and unusable on scanned page images or a PDF without
+enough of a text layer. In either of those cases (or if ``mineru`` is
+explicitly requested but isn't installed), ``document2md`` exits with a
+message pointing at ``pip install "document2md[mineru]"`` instead of a
+traceback.
 
 ``--titulo``/``--titulo-siguiente`` crop the result to one note;
 ``--keep-pages`` also keeps the uncropped conversion alongside it, as
@@ -170,13 +189,25 @@ Markdown:
 ...     for path_or_paths, outdir, filename in jobs:
 ...         convert(path_or_paths, outdir, filename)
 
-``backend`` (default ``"auto"``) selects who converts the document —
-``"mineru"``, the only backend available today, is what ``"auto"``
-resolves to; any other value raises ``ValueError``. Resolution, and the
-check that the resolved backend's own dependency is installed, happen in
-``__enter__``, before any document is converted; the resolved name is then
-available as ``self.backend``. When ``mineru`` isn't installed, entering
-raises ``RuntimeError`` pointing at ``pip install "document2md[mineru]"``.
+``backend`` (default ``"auto"``) selects who converts the document:
+``"auto"``, ``"mineru"`` or ``"pymupdf"``; any other value raises
+``ValueError``. ``"auto"`` resolves to ``"mineru"`` when the ``mineru`` CLI
+is on ``PATH``, otherwise to ``"pymupdf"`` — mineru remains the reference
+backend where it is installed, and the light backend only makes installing
+it optional. Resolution, and the check that the resolved backend's own
+dependency is installed, happen in ``__enter__``, before any document is
+converted; the resolved name is then available as ``self.backend``. When
+the resolved backend's dependency isn't installed, entering raises
+``RuntimeError`` pointing at the right install command.
+
+``"pymupdf"`` reads a PDF's own embedded text layer instead of running
+OCR — far faster, at the cost of slightly worse structure. It has no use
+for a list of page images (which always need OCR) or a PDF without enough
+of a text layer (see :py:func:`~document2md.pymupdf_backend.has_text_layer`);
+calling it on either raises ``RuntimeError`` pointing at
+``pip install "document2md[mineru]"`` rather than silently falling back to
+mineru. ``keep_mineru_output`` and ``timeout`` are accepted but ignored for
+this backend, since it needs neither.
 
 Passing ``titulo``/``titulo_siguiente`` crops the OCR'd Markdown down to the
 text between the two titles, as they appear in the gazette's own index —
@@ -247,6 +278,35 @@ hands mineru's raw Markdown to ``document2md.tables`` below before writing the
 result to disk.
 
 .. automodule:: document2md.converter
+   :members:
+   :private-members:
+   :undoc-members:
+
+``document2md.pymupdf_backend`` — reading a PDF's own text layer
+------------------------------------------------------------------
+
+For a born-digital PDF, ``BatchConverter.__call__`` can instead read the
+PDF's own embedded text layer with `pymupdf4llm <https://github.com/pymupdf/RAG>`_
+(:py:func:`~document2md.pymupdf_backend.convert_to_markdown`) — far faster than
+OCR, at the cost of slightly worse structure, and with no image extraction.
+:py:func:`~document2md.pymupdf_backend.has_text_layer` is what ``BatchConverter``
+uses to decide whether a given PDF qualifies: at least ``MIN_TEXT_PAGE_FRACTION``
+(``0.8``) of its pages must each have at least ``MIN_CHARS_PER_PAGE`` (``50``)
+non-whitespace characters of extractable text, tolerating a few scanned
+inserts in an otherwise digital document. PyMuPDF/pymupdf4llm aren't
+installed in this doctest job (see the note above), so this example, which
+builds a one-page PDF with PyMuPDF inline, is skipped here as well:
+
+>>> import pymupdf  # doctest: +SKIP
+>>> from document2md.pymupdf_backend import has_text_layer
+>>> doc = pymupdf.open()  # doctest: +SKIP
+>>> page = doc.new_page()  # doctest: +SKIP
+>>> _ = page.insert_text((72, 72), "Born-digital text, not a scan.")  # doctest: +SKIP
+>>> doc.save("a.pdf")  # doctest: +SKIP
+>>> has_text_layer("a.pdf")  # doctest: +SKIP
+True
+
+.. automodule:: document2md.pymupdf_backend
    :members:
    :private-members:
    :undoc-members:

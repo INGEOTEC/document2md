@@ -17,6 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "requests>=2.31",
+    "pymupdf4llm>=1.28",
 ]
 dynamic = ['version']
 

@@ -11,14 +11,18 @@ from document2md.mineru_server import ENV_VAR as MINERU_API_URL_ENV_VAR
 class TestBatchConverterServerLifecycle(unittest.TestCase):
     def setUp(self):
         self._original_env = os.environ.pop(MINERU_API_URL_ENV_VAR, None)
-        # __enter__ now checks the mineru backend's dependency before
-        # starting the server; these tests are about the server lifecycle,
-        # not that check, so pretend it's always satisfied.
+        # __enter__ now checks the mineru backend's dependency, and (for
+        # "auto") whether mineru is on PATH, before starting the server;
+        # these tests are about the server lifecycle, not that check, so
+        # pretend mineru is always present and satisfied.
         self._require_mineru_patcher = patch("document2md.batch._converter._require_mineru")
         self._require_mineru_patcher.start()
+        self._which_patcher = patch("document2md.batch.shutil.which", return_value="/usr/bin/mineru")
+        self._which_patcher.start()
 
     def tearDown(self):
         self._require_mineru_patcher.stop()
+        self._which_patcher.stop()
         if self._original_env is None:
             os.environ.pop(MINERU_API_URL_ENV_VAR, None)
         else:
@@ -58,9 +62,17 @@ class TestBatchConverterBackend(unittest.TestCase):
 
     @patch("document2md.batch.MineruServer")
     @patch("document2md.batch._converter._require_mineru")
-    def test_auto_resolves_to_mineru(self, mock_require_mineru, mock_server_cls):
+    @patch("document2md.batch.shutil.which", return_value="/usr/bin/mineru")
+    def test_auto_resolves_to_mineru_when_on_path(self, mock_which, mock_require_mineru, mock_server_cls):
         with BatchConverter(backend="auto") as convert:
             self.assertEqual(convert.backend, "mineru")
+        mock_server_cls.return_value.start.assert_called_once()
+
+    @patch("document2md.batch._pymupdf_backend._require_pymupdf")
+    @patch("document2md.batch.shutil.which", return_value=None)
+    def test_auto_resolves_to_pymupdf_when_mineru_not_on_path(self, mock_which, mock_require_pymupdf):
+        with BatchConverter(backend="auto") as convert:
+            self.assertEqual(convert.backend, "pymupdf")
 
     @patch("document2md.batch.MineruServer")
     @patch("document2md.batch._converter._require_mineru")
@@ -77,10 +89,30 @@ class TestBatchConverterBackend(unittest.TestCase):
     )
     def test_enter_raises_when_mineru_is_missing(self, mock_require_mineru):
         with self.assertRaises(RuntimeError) as ctx:
-            with BatchConverter():
+            with BatchConverter(backend="mineru"):
                 pass
 
         self.assertIn("document2md[mineru]", str(ctx.exception))
+
+    @patch("document2md.batch.MineruServer")
+    def test_explicit_pymupdf_backend_never_starts_a_server(self, mock_server_cls):
+        with BatchConverter(backend="pymupdf") as convert:
+            self.assertEqual(convert.backend, "pymupdf")
+        mock_server_cls.assert_not_called()
+
+    @patch(
+        "document2md.batch._pymupdf_backend._require_pymupdf",
+        side_effect=RuntimeError(
+            "'pymupdf4llm' is required for the pymupdf backend but isn't installed. "
+            "Install it with: pip install document2md"
+        ),
+    )
+    def test_enter_raises_when_pymupdf_is_missing(self, mock_require_pymupdf):
+        with self.assertRaises(RuntimeError) as ctx:
+            with BatchConverter(backend="pymupdf"):
+                pass
+
+        self.assertIn("pymupdf4llm", str(ctx.exception))
 
 
 class TestBatchConverterCall(unittest.TestCase):
@@ -196,6 +228,70 @@ class TestBatchConverterCall(unittest.TestCase):
         dest = self.converter(self.pdf_path, nested, "nota-300.md")
 
         self.assertTrue(dest.exists())
+
+
+class TestBatchConverterCallPymupdf(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.outdir = Path(self.tmpdir.name)
+        self.pdf_path = self.outdir / "nota-300.pdf"
+        self.pdf_path.write_bytes(b"%PDF-1.4 fake")
+        self.image_paths = [self.outdir / "nota-200-p1.jpg", self.outdir / "nota-200-p2.jpg"]
+        for p in self.image_paths:
+            p.write_bytes(b"\xff\xd8\xff fake jpeg")
+        # __call__ dispatches on self.backend, normally set by __enter__;
+        # set it directly to exercise __call__ without going through the
+        # pymupdf dependency check in __enter__.
+        self.converter = BatchConverter()
+        self.converter.backend = "pymupdf"
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_image_list_raises_ocr_hint(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            self.converter(self.image_paths, self.outdir, "nota-200.md")
+        self.assertIn("document2md[mineru]", str(ctx.exception))
+
+    @patch("document2md.batch._pymupdf_backend.has_text_layer", return_value=False)
+    def test_pdf_without_text_layer_raises_ocr_hint(self, mock_has_text_layer):
+        with self.assertRaises(RuntimeError) as ctx:
+            self.converter(self.pdf_path, self.outdir, "nota-300.md")
+
+        self.assertIn("no embedded text layer", str(ctx.exception))
+        self.assertIn("document2md[mineru]", str(ctx.exception))
+
+    @patch("document2md.batch._pymupdf_backend.convert_to_markdown")
+    @patch("document2md.batch._pymupdf_backend.has_text_layer", return_value=True)
+    def test_pdf_with_text_layer_is_converted(self, mock_has_text_layer, mock_convert):
+        mock_convert.side_effect = lambda pdf, md: md.write_text("texto", encoding="utf-8")
+
+        dest = self.converter(self.pdf_path, self.outdir, "nota-300.md")
+
+        self.assertEqual(dest, self.outdir / "nota-300.md")
+        mock_convert.assert_called_once_with(self.pdf_path, dest)
+
+    @patch("document2md.batch._pymupdf_backend.convert_to_markdown")
+    @patch("document2md.batch._pymupdf_backend.has_text_layer", return_value=True)
+    def test_titulo_cropping_still_applies(self, mock_has_text_layer, mock_convert):
+        mock_convert.side_effect = lambda pdf, md: md.write_text(
+            "resto de la nota anterior.\n\n"
+            "## Acuerdo de regularización de títulos\n\n"
+            "Cuerpo del acuerdo.\n\n"
+            "## Norma Oficial Mexicana NOM-042-NUCL\n\n"
+            "Nota siguiente, excluir.\n",
+            encoding="utf-8",
+        )
+
+        dest = self.converter(
+            self.pdf_path, self.outdir, "nota-300.md",
+            "Acuerdo de regularización de títulos",
+            "Norma Oficial Mexicana NOM-042-NUCL",
+        )
+
+        text = dest.read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("## Acuerdo de regularización"))
+        self.assertNotIn("NOM-042-NUCL", text)
 
 
 if __name__ == "__main__":

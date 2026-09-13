@@ -1,3 +1,5 @@
+import contextlib
+import io
 import subprocess
 import tempfile
 import unittest
@@ -46,6 +48,10 @@ class TestParseArgs(unittest.TestCase):
     def test_backend_flag(self):
         args = parse_args(["--pdf", "edicion.pdf", "--backend", "mineru"])
         self.assertEqual(args.backend, "mineru")
+
+    def test_backend_flag_pymupdf(self):
+        args = parse_args(["--pdf", "edicion.pdf", "--backend", "pymupdf"])
+        self.assertEqual(args.backend, "pymupdf")
 
     def test_unknown_backend_rejected(self):
         with self.assertRaises(SystemExit):
@@ -172,6 +178,36 @@ class TestMain(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 main(["--pdf", str(pdf_path), "--outdir", tmpdir])
 
+            self.assertIn("document2md[mineru]", str(ctx.exception))
+
+    @patch("document2md.cli.BatchConverter")
+    def test_main_prints_resolved_pymupdf_backend(self, mock_batch_converter):
+        mock_convert = mock_batch_converter.return_value.__enter__.return_value
+        mock_convert.backend = "pymupdf"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_path = Path(tmpdir) / "edicion.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4")
+
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                main(["--pdf", str(pdf_path), "--outdir", tmpdir, "--backend", "auto"])
+
+            self.assertIn("Converting to Markdown (pymupdf)...", out.getvalue())
+
+    @patch("document2md.cli.BatchConverter")
+    def test_main_exits_clearly_when_pdf_has_no_text_layer(self, mock_batch_converter):
+        mock_convert = mock_batch_converter.return_value.__enter__.return_value
+        mock_convert.side_effect = RuntimeError(
+            "edicion.pdf has no embedded text layer and needs OCR. "
+            'Install the mineru backend with: pip install "document2md[mineru]"'
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_path = Path(tmpdir) / "edicion.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4")
+            with self.assertRaises(SystemExit) as ctx:
+                main(["--pdf", str(pdf_path), "--outdir", tmpdir, "--backend", "pymupdf"])
+
+            self.assertIn("no embedded text layer", str(ctx.exception))
             self.assertIn("document2md[mineru]", str(ctx.exception))
 
 

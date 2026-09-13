@@ -6,12 +6,19 @@ code in this repository.
 ## What this is
 
 `document2md` converts a PDF, or an ordered set of scanned page images, into
-Markdown, via OCR and layout analysis. It is a wrapper around
-[mineru](https://github.com/opendatalab/MinerU); its own contribution is:
+Markdown, via one of two backends: [mineru](https://github.com/opendatalab/MinerU)
+(OCR and layout analysis, for scanned pages) or
+[pymupdf4llm](https://github.com/pymupdf/RAG) (reading a born-digital PDF's own
+embedded text layer, no OCR needed — see `document2md/pymupdf_backend.py`).
+Its own contribution is:
 
 - keeping mineru's `mineru-api` server warm across a batch of documents
   (`BatchConverter`), instead of paying its startup and model-loading cost
   once per document;
+- resolving which backend converts a given document (`BatchConverter`'s
+  `backend=`/the CLI's `--backend`; see the seam bullet below) and rejecting,
+  rather than silently OCR-falling-back on, input the resolved backend can't
+  handle;
 - stitching the OCR of several page images of the same document into one
   continuous Markdown document;
 - rewriting the raw HTML tables mineru falls back to (rowspan/colspan) into
@@ -19,6 +26,9 @@ Markdown, via OCR and layout analysis. It is a wrapper around
 - cropping the result down to one section, by locating its title and the next
   one's title in the OCR'd text (`cutter`) — a scanned page usually holds the
   tail of one document and the head of the next.
+
+PyMuPDF and pymupdf4llm are AGPL-3.0 licensed; `document2md` itself stays
+Apache-2.0 (see the README's Install section).
 
 It was extracted from the [LegalIA](https://github.com/INGEOTEC/LegalIA)
 monorepo at commit `e1f258c` (issue
@@ -35,13 +45,17 @@ earlier history is still readable — as `packages/document2md`, and as
   what it does, not after the corpus that first needed it.*
 - **It downloads nothing.** It only ever converts a PDF or images already on
   disk. Getting a document is the caller's problem.
-- **The backend seam exists, with one backend behind it.** `BatchConverter(backend=...)`
-  and the CLI's `--backend` accept `auto` (default) and `mineru`; `auto`
-  resolves to `mineru`, the only backend implemented so far, and `mineru`
-  itself is the `document2md[mineru]` extra rather than a hard dependency. A
-  lightweight backend reading a PDF's own embedded text layer, for
-  born-digital documents that need no OCR at all, is the follow-up issue that
-  seam was built for.
+- **The backend seam has two backends behind it.** `BatchConverter(backend=...)`
+  and the CLI's `--backend` accept `auto` (default), `mineru` and `pymupdf`.
+  `auto` resolves to `mineru` when its CLI is on `PATH` (mineru remains the
+  reference backend where installed — it isn't itself replaced by `pymupdf`),
+  otherwise to `pymupdf`, which reads a PDF's own embedded text layer instead
+  of OCR-ing it. `mineru` is the `document2md[mineru]` extra rather than a
+  hard dependency; `pymupdf4llm` (the `pymupdf` backend's dependency) is a
+  core one, small enough that a bare `pip install document2md` still converts
+  something. Neither backend silently falls back to the other: a list of page
+  images, or a PDF without enough of an embedded text layer, under `pymupdf`
+  raises `RuntimeError` naming the `mineru` extra instead.
 
 ## Layout
 
@@ -105,17 +119,23 @@ reason.
 The tests never import `mineru` — they mock the subprocess boundary
 (`document2md.converter.convert_to_markdown` /
 `convert_images_to_markdown`, `document2md.batch.MineruServer`) — so a local
-install with `pip install --no-deps -e .` plus `requests` and `pytest` runs
-the whole suite without the gigabytes of `mineru[pipeline]`. CI installs the
-package fully (`pip install -e ".[test]"`, plus `libgl1`/`libglib2.0-0` for
-mineru's opencv) on every supported Python, which is what proves the declared
-dependency actually installs.
+install with `pip install --no-deps -e .` plus `requests`, `pymupdf4llm` and
+`pytest` runs the whole suite without the gigabytes of `mineru[pipeline]`.
+`tests/test_pymupdf_backend.py` is the one exception: it exercises the real
+`pymupdf`/`pymupdf4llm`, building its own PDFs on the fly with PyMuPDF, since
+that backend is small and core rather than optional. CI's `document2md` job
+installs the package fully (`pip install -e ".[mineru,test]"`, plus
+`libgl1`/`libglib2.0-0` for mineru's opencv), proving the declared `mineru`
+extra actually installs; `document2md-light` installs `-e ".[test]"` with no
+apt step, proving the rest of the suite (including the `pymupdf` backend)
+needs no mineru at all.
 
 The docs' OCR examples are the one documented exception to "every public
 symbol has a verified example": entering a `BatchConverter` starts a real
-`mineru-api` server, so they are marked `# doctest: +SKIP` and verified
-instead by `tests/test_batch.py` and `tests/test_cli.py`. The exception is
-written on the docs page itself, not silently skipped.
+`mineru-api` server, or shells out to the real `pymupdf`/`pymupdf4llm`, so
+those are marked `# doctest: +SKIP` and verified instead by
+`tests/test_batch.py`, `tests/test_cli.py` and `tests/test_pymupdf_backend.py`.
+The exception is written on the docs page itself, not silently skipped.
 
 ## Publishing
 

@@ -69,10 +69,12 @@ add_function_parentheses = False
 add_module_names = False
 
 # document2md never imports mineru itself in-process — it only shells out to the
-# mineru-api CLI as a subprocess (see document2md/mineru_server.py) — so autodoc
-# needs no mock for it; document2md is installed with --no-deps in
-# .readthedocs.yaml precisely so the heavy mineru[pipeline] install (and its
-# libgl1/opencv system dependency, see .github/workflows/test.yml) never has to
+# mineru-api CLI as a subprocess (see document2md/mineru_server.py) — and
+# document2md/pymupdf_backend.py imports pymupdf/pymupdf4llm lazily, inside
+# functions rather than at module level, so autodoc needs no mock for either;
+# document2md is installed with --no-deps in .readthedocs.yaml precisely so
+# neither the heavy mineru[pipeline] install (and its libgl1/opencv system
+# dependency, see .github/workflows/test.yml) nor pymupdf4llm ever has to
 # happen for a docs build.
 
 # -- Options for HTML output ----------------------------------------------
