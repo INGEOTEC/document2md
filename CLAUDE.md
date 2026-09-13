@@ -35,11 +35,13 @@ earlier history is still readable — as `packages/document2md`, and as
   what it does, not after the corpus that first needed it.*
 - **It downloads nothing.** It only ever converts a PDF or images already on
   disk. Getting a document is the caller's problem.
-- **There is no backend seam yet.** `mineru` is an implementation detail, and a
-  cloud OCR/layout service is a plausible second backend — that possibility is
-  the reason for the name, not something implemented here. No `backend=`
-  parameter, no registry, no second converter. It gets its own issue when it
-  happens.
+- **The backend seam exists, with one backend behind it.** `BatchConverter(backend=...)`
+  and the CLI's `--backend` accept `auto` (default) and `mineru`; `auto`
+  resolves to `mineru`, the only backend implemented so far, and `mineru`
+  itself is the `document2md[mineru]` extra rather than a hard dependency. A
+  lightweight backend reading a PDF's own embedded text layer, for
+  born-digital documents that need no OCR at all, is the follow-up issue that
+  seam was built for.
 
 ## Layout
 

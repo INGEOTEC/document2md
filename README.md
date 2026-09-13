@@ -31,10 +31,25 @@ be read.
 pip install document2md
 ```
 
+installs the package with no OCR backend — `document2md`'s own contribution
+(server lifecycle, page stitching, table rewriting, title cropping) with
+none of them wired to a converter yet. To convert anything, add the
+`mineru` backend:
+
+```bash
+pip install "document2md[mineru]"
+```
+
+This is the only backend available today; `--backend`/`BatchConverter(backend=...)`
+name it explicitly so a lighter backend can be added later without a
+default changing under anyone. `nota2md`'s `ocr` extra (in the LegalIA
+repository) must depend on `document2md[mineru]>=0.4.0`, not a bare
+`document2md>=0.3.0`, or `pip install nota2md[ocr]` stops installing mineru.
+
 For development, from a clone of this repository:
 
 ```bash
-pip install -e ".[test]"
+pip install -e ".[mineru,test]"
 ```
 
 ## Usage
@@ -82,6 +97,11 @@ flags:
   rendered PDFs...) in `<outdir>/<pdf stem>_mineru/` instead of discarding
   it; useful when a conversion looks wrong and mineru's own read of the page
   is the first thing worth inspecting.
+- `--backend {auto,mineru}` (default `auto`) — which backend converts the
+  document; `auto` currently always resolves to `mineru`, the only backend
+  available today. If the `mineru` extra isn't installed, `document2md` exits
+  with a message telling you to `pip install "document2md[mineru]"` instead
+  of a traceback.
 
 ### Python: batch conversion
 
@@ -107,7 +127,10 @@ spanning several scanned pages, and writes the result to `outdir/filename`.
 The same `titulo`/`titulo_siguiente`, `min_confidence`, `keep_pages` and
 `keep_mineru_output` options the CLI exposes are also its keyword
 arguments — see `BatchConverter.__call__`'s docstring for the full
-signature.
+signature. `BatchConverter(backend="auto")` (the default) picks which
+backend does the conversion — `"mineru"`, the only one available today, is
+what `"auto"` resolves to; the resolved name is available as
+`convert.backend` once entered.
 
 `nota2md.legal_provisions` accepts an already-`__enter__`'d `BatchConverter`
 as its own `converter` parameter, so a batch of DOF legal provisions can
@@ -116,5 +139,6 @@ share the same warm server too.
 ## Tests
 
 ```bash
-pytest -v
+pytest tests
+pytest dof2md/tests
 ```

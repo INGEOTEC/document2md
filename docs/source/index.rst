@@ -124,6 +124,12 @@ has no single input name to derive one from:
    Converting to Markdown (mineru)...
    Markdown saved to: output/nota-200.md
 
+``--backend {auto,mineru}`` (default ``auto``) selects the conversion
+backend; ``auto`` currently always resolves to ``mineru``, the only backend
+available. If the ``mineru`` extra isn't installed, ``document2md`` exits
+with a message pointing at ``pip install "document2md[mineru]"`` instead of
+a traceback.
+
 ``--titulo``/``--titulo-siguiente`` crop the result to one note;
 ``--keep-pages`` also keeps the uncropped conversion alongside it, as
 ``<outdir>/<pdf stem>.full.md``:
@@ -163,6 +169,14 @@ Markdown:
 >>> with BatchConverter() as convert:  # doctest: +SKIP
 ...     for path_or_paths, outdir, filename in jobs:
 ...         convert(path_or_paths, outdir, filename)
+
+``backend`` (default ``"auto"``) selects who converts the document —
+``"mineru"``, the only backend available today, is what ``"auto"``
+resolves to; any other value raises ``ValueError``. Resolution, and the
+check that the resolved backend's own dependency is installed, happen in
+``__enter__``, before any document is converted; the resolved name is then
+available as ``self.backend``. When ``mineru`` isn't installed, entering
+raises ``RuntimeError`` pointing at ``pip install "document2md[mineru]"``.
 
 Passing ``titulo``/``titulo_siguiente`` crops the OCR'd Markdown down to the
 text between the two titles, as they appear in the gazette's own index —

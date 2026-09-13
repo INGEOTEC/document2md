@@ -17,11 +17,11 @@ classifiers = [
 ]
 dependencies = [
     "requests>=2.31",
-    "mineru[pipeline]",
 ]
 dynamic = ['version']
 
 [project.optional-dependencies]
+mineru = ["mineru[pipeline]"]
 test = ["pytest>=7.0"]
 
 [project.urls]

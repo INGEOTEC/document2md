@@ -11,8 +11,14 @@ from document2md.mineru_server import ENV_VAR as MINERU_API_URL_ENV_VAR
 class TestBatchConverterServerLifecycle(unittest.TestCase):
     def setUp(self):
         self._original_env = os.environ.pop(MINERU_API_URL_ENV_VAR, None)
+        # __enter__ now checks the mineru backend's dependency before
+        # starting the server; these tests are about the server lifecycle,
+        # not that check, so pretend it's always satisfied.
+        self._require_mineru_patcher = patch("document2md.batch._converter._require_mineru")
+        self._require_mineru_patcher.start()
 
     def tearDown(self):
+        self._require_mineru_patcher.stop()
         if self._original_env is None:
             os.environ.pop(MINERU_API_URL_ENV_VAR, None)
         else:
@@ -34,6 +40,47 @@ class TestBatchConverterServerLifecycle(unittest.TestCase):
 
         with BatchConverter():
             mock_server_cls.assert_not_called()
+
+
+class TestBatchConverterBackend(unittest.TestCase):
+    def setUp(self):
+        self._original_env = os.environ.pop(MINERU_API_URL_ENV_VAR, None)
+
+    def tearDown(self):
+        if self._original_env is None:
+            os.environ.pop(MINERU_API_URL_ENV_VAR, None)
+        else:
+            os.environ[MINERU_API_URL_ENV_VAR] = self._original_env
+
+    def test_unknown_backend_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            BatchConverter(backend="nope")
+
+    @patch("document2md.batch.MineruServer")
+    @patch("document2md.batch._converter._require_mineru")
+    def test_auto_resolves_to_mineru(self, mock_require_mineru, mock_server_cls):
+        with BatchConverter(backend="auto") as convert:
+            self.assertEqual(convert.backend, "mineru")
+
+    @patch("document2md.batch.MineruServer")
+    @patch("document2md.batch._converter._require_mineru")
+    def test_explicit_mineru_backend(self, mock_require_mineru, mock_server_cls):
+        with BatchConverter(backend="mineru") as convert:
+            self.assertEqual(convert.backend, "mineru")
+
+    @patch(
+        "document2md.batch._converter._require_mineru",
+        side_effect=RuntimeError(
+            "'mineru' is required for the mineru backend but isn't installed. "
+            'Install it with: pip install "document2md[mineru]"'
+        ),
+    )
+    def test_enter_raises_when_mineru_is_missing(self, mock_require_mineru):
+        with self.assertRaises(RuntimeError) as ctx:
+            with BatchConverter():
+                pass
+
+        self.assertIn("document2md[mineru]", str(ctx.exception))
 
 
 class TestBatchConverterCall(unittest.TestCase):

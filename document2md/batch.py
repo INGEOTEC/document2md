@@ -19,14 +19,26 @@ from document2md.cutter import cut_markdown_by_titles
 from document2md.mineru_server import ENV_VAR as _MINERU_API_URL_ENV_VAR
 from document2md.mineru_server import MineruServer
 
+# Backend names accepted by BatchConverter(backend=...) and --backend.
+# "auto" resolves to a concrete backend in __enter__; today that is always
+# "mineru" — a follow-up issue teaches it to pick a lighter backend for
+# born-digital PDFs.
+BACKENDS = ("auto", "mineru")
+
 
 class BatchConverter:
-    """Context manager: `__enter__` starts a persistent `mineru-api` server
+    """Context manager: `__enter__` resolves the requested `backend`, starts
+    a persistent `mineru-api` server if the resolved backend needs one
     (skipped if a caller further up already has one running via
-    MINERU_API_URL) and returns `self`, callable once per document;
+    MINERU_API_URL), and returns `self`, callable once per document;
     `__exit__` stops it. Calling it converts one document — a single PDF
     path, or a list of image paths for a document spanning several scanned
     pages — to Markdown, written to `outdir/filename`.
+
+    `backend` names who is responsible for the conversion: `"auto"`
+    (default) or `"mineru"`; any other value raises `ValueError`. `"auto"`
+    resolves to `"mineru"` today. The resolved name is stored as
+    `self.backend` once `__enter__` has run.
 
     `titulo`/`titulo_siguiente`, when given, slice the OCR'd Markdown down
     to the text between their two boundaries (see
@@ -37,16 +49,31 @@ class BatchConverter:
     what was asked for.
     """
 
-    def __init__(self):
-        """Create an unstarted converter; call `__enter__` (or use as a
-        context manager) before calling it."""
+    def __init__(self, backend: str = "auto"):
+        """Create an unstarted converter for the requested `backend`
+        (`"auto"` or `"mineru"`; anything else raises `ValueError`); call
+        `__enter__` (or use as a context manager) before calling it."""
+        if backend not in BACKENDS:
+            raise ValueError(
+                f"Unknown backend {backend!r}; accepted values: {', '.join(BACKENDS)}"
+            )
+        self._requested_backend = backend
+        self.backend: str | None = None
         self._server: MineruServer | None = None
 
     def __enter__(self) -> "BatchConverter":
-        """Start a persistent `mineru-api` server, unless one is already
-        reachable via MINERU_API_URL, and return `self`."""
+        """Resolve the requested backend (storing it as `self.backend`),
+        start a persistent `mineru-api` server if it needs one — unless one
+        is already reachable via MINERU_API_URL — and return `self`.
+
+        Raises RuntimeError if the resolved backend's dependency isn't
+        installed; this happens here, before any document is converted,
+        rather than on the first call."""
         import os
 
+        self.backend = "mineru" if self._requested_backend == "auto" else self._requested_backend
+
+        _converter._require_mineru()
         if _MINERU_API_URL_ENV_VAR not in os.environ:
             self._server = MineruServer()
             self._server.start()

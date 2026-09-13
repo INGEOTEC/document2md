@@ -30,7 +30,7 @@ jobs:
       - name: Install package and test dependencies
         run: |
           if [ "${{ matrix.package }}" = "document2md" ]; then
-            pip install -e ".[test]"
+            pip install -e ".[mineru,test]"
           else
             pip install -e "dof2md[test]"
           fi
@@ -41,6 +41,21 @@ jobs:
           else
             pytest dof2md/tests
           fi
+
+  # A light install with no mineru extra and no apt packages: proves the
+  # suite and the whole import graph need no mineru at all, i.e. that
+  # `pip install document2md` (no extra) is genuinely usable on its own.
+  document2md-light:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package and test dependencies
+        run: pip install -e ".[test]"
+      - name: Run tests
+        run: pytest tests
 
   # Runs the documentation's worked examples for real, separate from the
   # pytest matrix above. Read the Docs' own build stays HTML-only. The OCR

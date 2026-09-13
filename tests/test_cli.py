@@ -19,6 +19,7 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(args.min_confidence, 0.6)
         self.assertFalse(args.keep_pages)
         self.assertFalse(args.keep_mineru_output)
+        self.assertEqual(args.backend, "auto")
 
     def test_images_and_filename_flags(self):
         args = parse_args(["--images", "a.jpg", "b.jpg", "--filename", "out.md"])
@@ -41,6 +42,14 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(args.titulo_siguiente, "DECRETO por el que...")
         self.assertEqual(args.min_confidence, 0.8)
         self.assertTrue(args.keep_pages)
+
+    def test_backend_flag(self):
+        args = parse_args(["--pdf", "edicion.pdf", "--backend", "mineru"])
+        self.assertEqual(args.backend, "mineru")
+
+    def test_unknown_backend_rejected(self):
+        with self.assertRaises(SystemExit):
+            parse_args(["--pdf", "edicion.pdf", "--backend", "nope"])
 
 
 class TestMain(unittest.TestCase):
@@ -140,6 +149,30 @@ class TestMain(unittest.TestCase):
             pdf_path.write_bytes(b"%PDF-1.4")
             with self.assertRaises(SystemExit):
                 main(["--pdf", str(pdf_path), "--outdir", tmpdir])
+
+    @patch("document2md.cli.BatchConverter")
+    def test_main_passes_backend_flag(self, mock_batch_converter):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_path = Path(tmpdir) / "edicion.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4")
+
+            main(["--pdf", str(pdf_path), "--outdir", tmpdir, "--backend", "mineru"])
+
+            mock_batch_converter.assert_called_once_with(backend="mineru")
+
+    @patch("document2md.cli.BatchConverter")
+    def test_main_exits_clearly_when_backend_dependency_missing(self, mock_batch_converter):
+        mock_batch_converter.return_value.__enter__.side_effect = RuntimeError(
+            "'mineru' is required for the mineru backend but isn't installed. "
+            'Install it with: pip install "document2md[mineru]"'
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_path = Path(tmpdir) / "edicion.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4")
+            with self.assertRaises(SystemExit) as ctx:
+                main(["--pdf", str(pdf_path), "--outdir", tmpdir])
+
+            self.assertIn("document2md[mineru]", str(ctx.exception))
 
 
 if __name__ == "__main__":
