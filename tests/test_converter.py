@@ -87,8 +87,9 @@ class TestConvertToMarkdown(unittest.TestCase):
 
     @patch("document2md.converter.shutil.which", return_value=None)
     def test_raises_clear_error_when_mineru_missing(self, mock_which):
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError) as ctx:
             convert_to_markdown(self.pdf_path, self.md_path)
+        self.assertIn("document2md[mineru]", str(ctx.exception))
 
     @patch("document2md.converter.subprocess.run", side_effect=_fake_mineru_run_with_html_table)
     @patch("document2md.converter.shutil.which", return_value="/usr/local/bin/mineru")
@@ -219,8 +220,9 @@ class TestConvertImagesToMarkdown(unittest.TestCase):
 
     @patch("document2md.converter.shutil.which", return_value=None)
     def test_raises_when_mineru_missing(self, mock_which):
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RuntimeError) as ctx:
             convert_images_to_markdown(self.images, self.md_path)
+        self.assertIn("document2md[mineru]", str(ctx.exception))
 
     @patch("document2md.converter.subprocess.run", side_effect=_fake_mineru_run_text_only)
     @patch("document2md.converter.shutil.which", return_value="/usr/local/bin/mineru")

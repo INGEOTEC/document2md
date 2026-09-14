@@ -55,6 +55,12 @@ def parse_args(argv=None):
         help="Keep mineru's raw output (layout/model JSON, rendered PDFs...) in "
         "<outdir>/<pdf stem>_mineru/ instead of discarding it",
     )
+    parser.add_argument(
+        "--backend", choices=("auto", "mineru", "pymupdf"), default="auto",
+        help="Conversion backend to use (default: auto, which resolves to mineru "
+        "when it's on PATH, otherwise pymupdf, reading a PDF's own embedded text "
+        "layer without OCR)",
+    )
     return parser.parse_args(argv)
 
 
@@ -62,7 +68,8 @@ def main(argv=None):
     """Entry point for the `document2md` console script: parse arguments, run one
     `BatchConverter` conversion, and print where the Markdown was saved.
     Exits with an error message (no traceback) on a missing/ambiguous input
-    source or a mineru timeout."""
+    source, a mineru timeout, or a backend whose dependency isn't
+    installed."""
     args = parse_args(argv)
 
     sources_given = sum(x is not None for x in (args.pdf, args.images))
@@ -88,9 +95,9 @@ def main(argv=None):
         md_filename = args.filename
         path_or_paths = image_paths
 
-    print("Converting to Markdown (mineru)...")
     try:
-        with BatchConverter() as convert:
+        with BatchConverter(backend=args.backend) as convert:
+            print(f"Converting to Markdown ({convert.backend})...")
             md_path = convert(
                 path_or_paths, outdir, md_filename, args.titulo, args.titulo_siguiente,
                 min_confidence=args.min_confidence,
@@ -102,6 +109,8 @@ def main(argv=None):
             f"Conversion timed out after {DEFAULT_TIMEOUT_SECONDS}s. "
             "This document may be unusually large."
         )
+    except RuntimeError as err:
+        sys.exit(str(err))
     print(f"Markdown saved to: {md_path}")
 
 

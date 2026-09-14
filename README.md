@@ -5,10 +5,12 @@
 
 Converts a PDF, or a set of scanned page images, into Markdown — any
 document, such as an edition of Mexico's official gazette (DOF, *Diario
-Oficial de la Federación*) — optionally cropped down to a single note.
-It's a wrapper
-around [mineru](https://github.com/opendatalab/MinerU) for the OCR/layout
-analysis itself; `document2md`'s own contribution is:
+Oficial de la Federación*) — optionally cropped down to a single note. It
+has two backends: [mineru](https://github.com/opendatalab/MinerU) (OCR and
+layout analysis, for scanned pages) and
+[pymupdf4llm](https://github.com/pymupdf/RAG) (reading a born-digital PDF's
+own embedded text layer, no OCR needed); `document2md`'s own contribution
+is:
 
 - Keeping mineru's `mineru-api` server warm across a batch of documents,
   instead of paying its startup (and model-loading) cost once per document.
@@ -25,16 +27,38 @@ monorepo at commit `e1f258c`, where every commit of its earlier history (as
 `packages/document2md`, and as `packages/dof2md` before the rename) can still
 be read.
 
+## Documentation
+
+- **Using the package:** [ingeotec.github.io/document2md](https://ingeotec.github.io/document2md/)
+- **Extending the package:** [document2md.readthedocs.io](https://document2md.readthedocs.io/)
+
 ## Install
 
 ```bash
 pip install document2md
 ```
 
+converts born-digital PDFs (`--backend pymupdf`, via
+[pymupdf4llm](https://github.com/pymupdf/RAG)) out of the box — no OCR, no
+models. Note: PyMuPDF and pymupdf4llm are AGPL-3.0 licensed, unlike the rest
+of `document2md` (Apache-2.0); check that fits your project before
+redistributing. Scanned documents still need mineru's OCR/layout models —
+add the `mineru` backend for that:
+
+```bash
+pip install "document2md[mineru]"
+```
+
+`--backend`/`BatchConverter(backend=...)` name each backend explicitly so
+`auto`'s policy (prefer `mineru` when installed, fall back to `pymupdf`
+otherwise) is visible rather than implicit. `nota2md`'s `ocr` extra (in the
+LegalIA repository) must depend on `document2md[mineru]>=0.4.0`, not a bare
+`document2md>=0.3.0`, or `pip install nota2md[ocr]` stops installing mineru.
+
 For development, from a clone of this repository:
 
 ```bash
-pip install -e ".[test]"
+pip install -e ".[mineru,test]"
 ```
 
 ## Usage
@@ -82,6 +106,14 @@ flags:
   rendered PDFs...) in `<outdir>/<pdf stem>_mineru/` instead of discarding
   it; useful when a conversion looks wrong and mineru's own read of the page
   is the first thing worth inspecting.
+- `--backend {auto,mineru,pymupdf}` (default `auto`) — which backend
+  converts the document. `auto` resolves to `mineru` when it's on `PATH`,
+  otherwise `pymupdf`. `pymupdf` reads a PDF's own embedded text layer
+  instead of running OCR — far faster, at the cost of slightly worse
+  structure — and can't handle scanned page images or a PDF without enough
+  of a text layer; `document2md` exits with a message telling you to
+  `pip install "document2md[mineru]"` instead of a traceback when that
+  happens, or when `mineru` is requested but isn't installed.
 
 ### Python: batch conversion
 
@@ -107,7 +139,12 @@ spanning several scanned pages, and writes the result to `outdir/filename`.
 The same `titulo`/`titulo_siguiente`, `min_confidence`, `keep_pages` and
 `keep_mineru_output` options the CLI exposes are also its keyword
 arguments — see `BatchConverter.__call__`'s docstring for the full
-signature.
+signature. `BatchConverter(backend="auto")` (the default) picks which
+backend does the conversion: `"mineru"` when it's on `PATH`, otherwise
+`"pymupdf"`; the resolved name is available as `convert.backend` once
+entered. `"pymupdf"` raises `RuntimeError` (naming the `mineru` extra)
+rather than silently falling back to it on input it can't handle — a list
+of page images, or a PDF without enough of an embedded text layer.
 
 `nota2md.legal_provisions` accepts an already-`__enter__`'d `BatchConverter`
 as its own `converter` parameter, so a batch of DOF legal provisions can
@@ -116,5 +153,6 @@ share the same warm server too.
 ## Tests
 
 ```bash
-pytest -v
+pytest tests
+pytest dof2md/tests
 ```

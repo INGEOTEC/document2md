@@ -6,12 +6,19 @@ code in this repository.
 ## What this is
 
 `document2md` converts a PDF, or an ordered set of scanned page images, into
-Markdown, via OCR and layout analysis. It is a wrapper around
-[mineru](https://github.com/opendatalab/MinerU); its own contribution is:
+Markdown, via one of two backends: [mineru](https://github.com/opendatalab/MinerU)
+(OCR and layout analysis, for scanned pages) or
+[pymupdf4llm](https://github.com/pymupdf/RAG) (reading a born-digital PDF's own
+embedded text layer, no OCR needed — see `document2md/pymupdf_backend.py`).
+Its own contribution is:
 
 - keeping mineru's `mineru-api` server warm across a batch of documents
   (`BatchConverter`), instead of paying its startup and model-loading cost
   once per document;
+- resolving which backend converts a given document (`BatchConverter`'s
+  `backend=`/the CLI's `--backend`; see the seam bullet below) and rejecting,
+  rather than silently OCR-falling-back on, input the resolved backend can't
+  handle;
 - stitching the OCR of several page images of the same document into one
   continuous Markdown document;
 - rewriting the raw HTML tables mineru falls back to (rowspan/colspan) into
@@ -19,6 +26,9 @@ Markdown, via OCR and layout analysis. It is a wrapper around
 - cropping the result down to one section, by locating its title and the next
   one's title in the OCR'd text (`cutter`) — a scanned page usually holds the
   tail of one document and the head of the next.
+
+PyMuPDF and pymupdf4llm are AGPL-3.0 licensed; `document2md` itself stays
+Apache-2.0 (see the README's Install section).
 
 It was extracted from the [LegalIA](https://github.com/INGEOTEC/LegalIA)
 monorepo at commit `e1f258c` (issue
@@ -35,11 +45,17 @@ earlier history is still readable — as `packages/document2md`, and as
   what it does, not after the corpus that first needed it.*
 - **It downloads nothing.** It only ever converts a PDF or images already on
   disk. Getting a document is the caller's problem.
-- **There is no backend seam yet.** `mineru` is an implementation detail, and a
-  cloud OCR/layout service is a plausible second backend — that possibility is
-  the reason for the name, not something implemented here. No `backend=`
-  parameter, no registry, no second converter. It gets its own issue when it
-  happens.
+- **The backend seam has two backends behind it.** `BatchConverter(backend=...)`
+  and the CLI's `--backend` accept `auto` (default), `mineru` and `pymupdf`.
+  `auto` resolves to `mineru` when its CLI is on `PATH` (mineru remains the
+  reference backend where installed — it isn't itself replaced by `pymupdf`),
+  otherwise to `pymupdf`, which reads a PDF's own embedded text layer instead
+  of OCR-ing it. `mineru` is the `document2md[mineru]` extra rather than a
+  hard dependency; `pymupdf4llm` (the `pymupdf` backend's dependency) is a
+  core one, small enough that a bare `pip install document2md` still converts
+  something. Neither backend silently falls back to the other: a list of page
+  images, or a PDF without enough of an embedded text layer, under `pymupdf`
+  raises `RuntimeError` naming the `mineru` extra instead.
 
 ## Layout
 
@@ -47,13 +63,22 @@ earlier history is still readable — as `packages/document2md`, and as
 pyproject.toml            document2md itself; the repository *is* the package
 setup.py                  two-line setuptools shim
 document2md/              the package: cli, batch, mineru_server, converter,
-                          tables, cutter
+                          pymupdf_backend, tables, cutter
 tests/                    its pytest suite
 dof2md/                   the old PyPI name's tombstone (see below)
 scripts/check_package_versions.py
-docs/                     Sphinx site, published at document2md.readthedocs.io
-.github/workflows/        test.yml, publish-pypi.yml
+website/                  Quarto user site, published to GitHub Pages at
+                          ingeotec.github.io/document2md — install, CLI,
+                          Python, backends; no API reference
+docs/                     Sphinx developer site, published at
+                          document2md.readthedocs.io — architecture, backends,
+                          development, full API reference; no usage guides
+                          beyond a pointer to the Pages site
+.github/workflows/        test.yml, website.yml, publish-pypi.yml
 ```
+
+The two sites have two audiences and no overlapping page: the Pages site is
+for using the package, Read the Docs for extending it.
 
 Two packages are published from this repository, so the release tag convention
 is `<pkg>-v<version>` (`document2md-v0.3.0`, `dof2md-v0.3.0`) rather than a
@@ -86,8 +111,9 @@ bare `v*`, which would not say which one.
 pytest tests            # document2md
 pytest dof2md/tests     # the tombstone
 python scripts/check_package_versions.py
+python -m sphinx -n -W --keep-going -b html docs/source docs/build/html
 python -m sphinx -b doctest docs/source docs/build/doctest
-python -m sphinx -b html docs/source docs/build/html
+quarto render website   # the Pages user site; needs Quarto 1.9.38, no Python
 ```
 
 **The two pytest runs are two invocations on purpose, never a bare `pytest`.**
@@ -103,17 +129,28 @@ reason.
 The tests never import `mineru` — they mock the subprocess boundary
 (`document2md.converter.convert_to_markdown` /
 `convert_images_to_markdown`, `document2md.batch.MineruServer`) — so a local
-install with `pip install --no-deps -e .` plus `requests` and `pytest` runs
-the whole suite without the gigabytes of `mineru[pipeline]`. CI installs the
-package fully (`pip install -e ".[test]"`, plus `libgl1`/`libglib2.0-0` for
-mineru's opencv) on every supported Python, which is what proves the declared
-dependency actually installs.
+install with `pip install --no-deps -e .` plus `requests`, `pymupdf4llm` and
+`pytest` runs the whole suite without the gigabytes of `mineru[pipeline]`.
+`tests/test_pymupdf_backend.py` is the one exception: it exercises the real
+`pymupdf`/`pymupdf4llm`, building its own PDFs on the fly with PyMuPDF, since
+that backend is small and core rather than optional. CI's `document2md` job
+installs the package fully (`pip install -e ".[mineru,test]"`, plus
+`libgl1`/`libglib2.0-0` for mineru's opencv), proving the declared `mineru`
+extra actually installs; `document2md-light` installs `-e ".[test]"` with no
+apt step, proving the rest of the suite (including the `pymupdf` backend)
+needs no mineru at all.
 
-The docs' OCR examples are the one documented exception to "every public
-symbol has a verified example": entering a `BatchConverter` starts a real
-`mineru-api` server, so they are marked `# doctest: +SKIP` and verified
-instead by `tests/test_batch.py` and `tests/test_cli.py`. The exception is
-written on the docs page itself, not silently skipped.
+Usage examples that would need `mineru` or `pymupdf4llm` (entering a
+`BatchConverter`, running the CLI) live on the Pages site (`website/`) now,
+not on Read the Docs — that site's code blocks are illustrative and not
+executed at all, and say so once per page. Read the Docs itself currently
+has no `# doctest: +SKIP` example: `document2md.cutter`'s real,
+executed example on `architecture.rst` is the only one on the site, and it
+needs neither backend nor any file on disk. If a future page needs one
+(a new backend's own example, say), verify it for real instead in the
+matching test module (following `tests/test_batch.py`, `tests/test_cli.py`
+and `tests/test_pymupdf_backend.py`) and write the exception on the page
+itself, not silently.
 
 ## Publishing
 
@@ -125,6 +162,13 @@ set on this repository. `publish-pypi.yml` refuses a tag that disagrees with
 **`document2md` must reach PyPI before or at the same time as any `nota2md`
 release whose `ocr` extra requires it** (`document2md>=0.3.0`), or
 `pip install nota2md[ocr]` breaks for everyone outside the LegalIA repository.
+
+The Pages site publishes itself: `website.yml` renders `website/` on every
+pull request that touches it, and publishes to the `gh-pages` branch on every
+push to `main` that does — no human action once the workflow exists. Read
+the Docs is the opposite: the project must be imported once, by a human, at
+readthedocs.org; nothing in this repository can do that, and
+`document2md.readthedocs.io` answers 404 until it happens.
 
 ## Language policy
 

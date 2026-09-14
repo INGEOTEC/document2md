@@ -1,0 +1,66 @@
+---
+title: "Backends"
+---
+
+document2md converts through one of two backends: `mineru` (OCR and
+layout analysis) or `pymupdf` (reading a PDF's own embedded text layer,
+no OCR). `--backend`/`BatchConverter(backend=...)` picks between them,
+defaulting to `"auto"`.
+
+## The `auto` rule
+
+`auto` resolves to `mineru` when the `mineru` CLI is on `PATH`, otherwise
+to `pymupdf`. mineru has given the best results and remains the reference
+backend wherever it's installed — `auto` never prefers the lighter
+backend over an installed mineru. The light backend exists to make
+*installing* mineru optional, not to replace it where it's present.
+
+|                    | `mineru`                         | `pymupdf`                          |
+|--------------------|-----------------------------------|-------------------------------------|
+| Quality            | Reference: the best structure document2md produces | Slightly worse structure |
+| Speed              | Slow: runs real layout/OCR models  | Orders of magnitude faster          |
+| Install size       | Heavy (`mineru[pipeline]`, an optional extra, plus system OpenCV packages) | Small, core dependency |
+| What it can read   | PDFs and scanned page images, digital or scanned alike | Only a PDF with enough of an embedded text layer |
+| Figures            | Extracted, alongside the Markdown  | Not extracted                       |
+
+## What counts as "enough" of a text layer
+
+The `pymupdf` backend can't tell the difference between a scanned PDF and
+one it simply doesn't understand, so it decides up front, page by page:
+a page counts as text-bearing when its extracted text has at least 50
+non-whitespace characters, and the PDF as a whole qualifies when at least
+80% of its pages are text-bearing — a whole-document decision, tolerating
+a handful of scanned inserts in an otherwise born-digital document. A
+fully scanned PDF always fails this check.
+
+A list of scanned page images always needs OCR — under `pymupdf` it's
+rejected outright, the same as a PDF that fails the text-layer check.
+Neither case falls back silently to `mineru`: document2md raises an error
+naming `pip install "document2md[mineru]"` instead, so the choice stays
+visible rather than hidden behind a slow, surprising OCR pass. See
+[Command line](cli.qmd#what-the-error-messages-mean) for the exact wording.
+
+## Forcing a backend
+
+- **Force `mineru`** (`--backend mineru`) when you want the best
+  structure, or a scanned document, and don't mind the wait or the
+  install size.
+- **Force `pymupdf`** (`--backend pymupdf`) when you know every document
+  in a batch is born-digital and want to fail fast (`RuntimeError`,
+  not a long OCR pass) on the rare one that turns out not to be.
+- **Leave it at `auto`** (the default) otherwise: it picks the best
+  backend actually available, without forcing an install either way.
+
+## How the output differs
+
+Both backends produce Markdown; the two differ in what they can capture
+from the source PDF:
+
+- **Headings.** `mineru` infers structure from its layout model;
+  `pymupdf` infers headings from font sizes.
+- **Tables.** `mineru`'s complex tables (rowspan/colspan) arrive as raw
+  HTML and are rewritten into Markdown tables by document2md itself (see
+  the developer docs' architecture page); `pymupdf4llm` emits Markdown
+  tables directly via PyMuPDF's own table finder.
+- **Figures.** `mineru` extracts figures alongside the Markdown, into
+  `<md stem>_images/`; `pymupdf` extracts none.

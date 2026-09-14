@@ -17,11 +17,12 @@ classifiers = [
 ]
 dependencies = [
     "requests>=2.31",
-    "mineru[pipeline]",
+    "pymupdf4llm>=1.28",
 ]
 dynamic = ['version']
 
 [project.optional-dependencies]
+mineru = ["mineru[pipeline]"]
 test = ["pytest>=7.0"]
 
 [project.urls]

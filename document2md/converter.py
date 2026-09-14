@@ -45,8 +45,8 @@ def _require_mineru() -> None:
     isn't on PATH, instead of letting `subprocess.run` fail opaquely."""
     if shutil.which("mineru") is None:
         raise RuntimeError(
-            "'mineru' is required to convert documents but isn't installed. "
-            "Install document2md's dependencies: pip install document2md"
+            "'mineru' is required for the mineru backend but isn't installed. "
+            'Install it with: pip install "document2md[mineru]"'
         )
 
 
